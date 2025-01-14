@@ -110,109 +110,119 @@ namespace RC
 
     static auto lua_unreal_script_function_hook_pre(Unreal::UnrealScriptFunctionCallableContext context, void* custom_data) -> void
     {
-
-        // Fetch the data corresponding to this UFunction
+        // 1) Retrieve our hook data and set "in game thread" context
         auto& lua_data = *static_cast<LuaUnrealScriptFunctionData*>(custom_data);
-
-        // This is a promise that we're in the game thread, used by other functions to ensure that we don't execute when unsafe
         set_is_in_game_thread(lua_data.lua, true);
 
-        // Use the stored registry index to put a Lua function on the Lua stack
-        // This is the function that was provided by the Lua call to "RegisterHook"
+        // 3) Prepare to call the Lua pre-hook function
         lua_data.lua.registry().get_function_ref(lua_data.lua_callback_ref);
 
-        // Set up the first param (context / this-ptr)
-        // TODO: Check what happens if a static UFunction is hooked since they don't have any context
+        // The first param to the Lua callback is always the context (the 'this' pointer)
         static auto s_object_property_name = Unreal::FName(STR("ObjectProperty"));
         LuaType::RemoteUnrealParam::construct(lua_data.lua, &context.Context, s_object_property_name);
 
-        // Attempt at dynamically fetching the params
+        // 2) Grab the UFunction
         const auto FunctionBeingExecuted = lua_data.unreal_function;
         uint16_t return_value_offset = FunctionBeingExecuted->GetReturnValueOffset();
+        lua_data.has_return_value = (return_value_offset != 0xFFFF);
 
-        // 'ReturnValueOffset' is 0xFFFF if the UFunction return type is void
-        lua_data.has_return_value = return_value_offset != 0xFFFF;
-
+        // Unreal counts return values as part of 'NumParms', so subtract 1 if there's a return
         uint8_t num_unreal_params = FunctionBeingExecuted->GetNumParms();
         if (lua_data.has_return_value)
         {
-            // Subtract one from the number of params if there's a return value
-            // This is because Unreal treats the return value as a param, and it's included in the 'NumParms' member variable
             --num_unreal_params;
         }
 
-        bool has_properties_to_process = lua_data.has_return_value || num_unreal_params > 0;
-        if (has_properties_to_process && (context.TheStack.Locals() || context.TheStack.OutParms()))
+        // 4) Define a local pointer for the return slot, so we can pass it to Step
+        //    If the function expects a return value, context.RESULT_DECL is usually the engine-allocated memory for it
+        void* RESULT_PARAM = context.RESULT_DECL;
+
+        // 5) We'll gather and push argument data to Lua
+        std::unordered_map<Unreal::FProperty*, void*> argument_buffer;
+        
+        if (context.TheStack.Locals() || context.TheStack.OutParms())
         {
-            // int32_t current_param_offset{};
-
-            for (Unreal::FProperty* func_prop : FunctionBeingExecuted->ForEachProperty())
+            for (Unreal::FProperty* prop : FunctionBeingExecuted->ForEachProperty())
             {
-                // Skip this property if it's not a parameter
-                if (!func_prop->HasAnyPropertyFlags(Unreal::EPropertyFlags::CPF_Parm))
+                if (!prop->HasAnyPropertyFlags(Unreal::EPropertyFlags::CPF_Parm))
                 {
                     continue;
                 }
-
-                // Skip if this property corresponds to the return value
-                if (lua_data.has_return_value && func_prop->GetOffset_Internal() == return_value_offset)
+                
+                if (lua_data.has_return_value && prop->GetOffset_Internal() == return_value_offset)
                 {
-                    lua_data.return_property = func_prop;
+                    lua_data.return_property = prop;
                     continue;
                 }
 
-                Unreal::FName property_type = func_prop->GetClass().GetFName();
-                int32_t name_comparison_index = property_type.GetComparisonIndex();
-
-                if (LuaType::StaticState::m_property_value_pushers.contains(name_comparison_index))
+                void* data{};
+                if (prop->HasAnyPropertyFlags(Unreal::EPropertyFlags::CPF_OutParm))
                 {
-                    // Non-typed pointer to the current parameter value
-                    void* data{};
-                    if (func_prop->HasAnyPropertyFlags(Unreal::EPropertyFlags::CPF_OutParm))
-                    {
-                        data = Unreal::FindOutParamValueAddress(context.TheStack, func_prop);
-                    }
-                    else
-                    {
-                        data = func_prop->ContainerPtrToValuePtr<void>(context.TheStack.Locals());
-                    }
-
-                    // Keeping track of where in the 'Locals' array the next property is
-                    // current_param_offset += func_prop->GetSize();
-
-                    // Set up a call to a handler for this type of Unreal property (the param)
-                    // The FName is being used as a key for an unordered_map which has the types & corresponding handlers filled right after the dll is injected
-                    const LuaType::PusherParams pusher_params{.operation = LuaType::Operation::GetParam,
-                                                              .lua = lua_data.lua,
-                                                              .base = nullptr,
-                                                              .data = data,
-                                                              .property = func_prop};
-                    LuaType::StaticState::m_property_value_pushers[name_comparison_index](pusher_params);
+                    data = Unreal::FindOutParamValueAddress(context.TheStack, prop);
                 }
                 else
                 {
-                    lua_data.lua.throw_error(fmt::format(
-                            "[unreal_script_function_hook] Tried accessing unreal property without a registered handler. Property type '{}' not supported.",
+                    data = prop->ContainerPtrToValuePtr<void>(context.TheStack.Locals());
+                }
+
+                if (data)
+                {
+                    // Same pushing logic
+                    Unreal::FName property_type = prop->GetClass().GetFName();
+                    int32_t name_comparison_index = property_type.GetComparisonIndex();
+                    if (LuaType::StaticState::m_property_value_pushers.contains(name_comparison_index))
+                    {
+                        const LuaType::PusherParams pusher_params{
+                            .operation = LuaType::Operation::GetParam,
+                            .lua = lua_data.lua,
+                            .base = nullptr,
+                            .data = data,
+                            .property = prop
+                        };
+                        LuaType::StaticState::m_property_value_pushers[name_comparison_index](pusher_params);
+                    }
+                    else
+                    {
+                        lua_data.lua.throw_error(fmt::format(
+                            "[unreal_script_function_hook_pre] Property type '{}' not supported (old approach).",
                             to_string(property_type.ToString())));
+                    }
+                }
+                else
+                {
+                    Output::send(
+                        STR("[unreal_script_function_hook_pre] Param '{}' has null data; skipping.\n"),
+                        prop->GetName());
                 }
             }
         }
 
-        // Call the Lua function with the correct number of parameters & return values
-        // Increasing the 'num_params' by one to account for the 'this / context' param
+        // 6) Call the Lua pre-hook function with #params + 1 (the extra is for the 'this' pointer)
         lua_data.lua.call_function(num_unreal_params + 1, 1);
+        
+        // 7) Write back any modified argument data from Lua
+        for (auto& [prop, propdata] : argument_buffer)
+        {
+            if (!propdata) continue; // skip null pointer
+            Unreal::FName property_type = prop->GetClass().GetFName();
+            int32_t name_comparison_index = property_type.GetComparisonIndex();
+            if (LuaType::StaticState::m_property_value_pushers.contains(name_comparison_index))
+            {
+                // Re-read from Lua if we want to apply modifications 
+                const LuaType::PusherParams pusher_params{
+                    .operation = LuaType::Operation::Set,
+                    .lua = lua_data.lua,
+                    .base = nullptr,
+                    .data = propdata,
+                    .property = prop
+                };
+                LuaType::StaticState::m_property_value_pushers[name_comparison_index](pusher_params);
+            }
+        }
 
-        // The params for the Lua script will be 'userdata' and they will have get/set functions
-        // Use these functions in the Lua script to access & mutate the parameter values
-
-        // After the Lua function has been executed you should call the original function
-        // This will execute any internal UE4 scripting functions & native functions depending on the type of UFunction
-        // The API will automatically call the original function
-        // This function continues in 'lua_unreal_script_function_hook_post' which executes immediately after the original function gets called
-
-        // No longer promising to be in the game thread
         set_is_in_game_thread(lua_data.lua, false);
     }
+
 
     static auto lua_unreal_script_function_hook_post(Unreal::UnrealScriptFunctionCallableContext context, void* custom_data) -> void
     {
@@ -369,6 +379,7 @@ namespace RC
         // No longer promising to be in the game thread
         set_is_in_game_thread(lua_data.lua, false);
     }
+
 
     static auto register_input_globals(const LuaMadeSimple::Lua& lua) -> void
     {
