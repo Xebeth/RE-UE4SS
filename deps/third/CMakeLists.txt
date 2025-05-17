@@ -22,7 +22,7 @@ add_subdirectory("GLFW")
 FetchContent_Declare(
     ImGui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG v1.89
+    GIT_TAG v1.91.9b
     GIT_SHALLOW TRUE
     GIT_PROGRESS ON
     CONFIGURE_COMMAND ""
@@ -52,7 +52,7 @@ add_subdirectory("imgui")
 FetchContent_Declare(
     zydis
     GIT_REPOSITORY https://github.com/zyantific/zydis.git
-    GIT_TAG v4.1.0
+    GIT_TAG v4.1.1
     GIT_SHALLOW TRUE
     GIT_PROGRESS ON
 )
@@ -62,7 +62,7 @@ add_subdirectory("zydis")
 FetchContent_Declare(
     PolyHook2
     GIT_REPOSITORY https://github.com/stevemk14ebr/PolyHook_2_0.git
-    GIT_TAG fd2a88f09c8ae89440858fc52573656141013c7f
+    GIT_TAG 4c8872e207e76ea43fd23f802e3bf5acb43fee8a
     GIT_PROGRESS ON
 )
 add_subdirectory("PolyHook_2_0")
@@ -80,7 +80,7 @@ add_subdirectory("raw_pdb")
 FetchContent_Declare(
     Corrosion
     GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-    GIT_TAG fce4fe54328ada11b823f9ae72346b4e97a27844
+    GIT_TAG v0.5.2
 )
 add_subdirectory("corrosion")
 

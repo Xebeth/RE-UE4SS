@@ -37,3 +37,22 @@ target_include_directories(ImGui PUBLIC
     "${ImGui_FETCHED_SOURCE}"
     "${ImGuiTextEdit_FETCHED_SOURCE}"
     "${IconFontCppHeaders_FETCHED_SOURCE}")
+    
+if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
+    target_compile_options(ImGui PRIVATE /W0)
+elseif (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+    target_compile_options(ImGui PRIVATE 
+        -xc++
+        -Wno-deprecated-enum-enum-conversion
+        -Wno-enum-enum-conversion
+        -Wno-enum-float-conversion
+        -Wno-deprecated-enum-float-conversion
+        -Wno-deprecated-anon-enum-enum-conversion
+        -Wno-error=enum-enum-conversion
+        -Wno-error=enum-float-conversion
+        -Wno-error=deprecated-enum-enum-conversion
+        -Wno-error=deprecated-enum-float-conversion
+        -Wno-error=deprecated-anon-enum-enum-conversion
+        -w  # Suppress all warnings for this library
+    )
+endif ()

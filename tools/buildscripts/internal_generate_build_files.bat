@@ -27,4 +27,13 @@ if %Compiler% == ClangNinja (
     call generate_clang_ninja_internal.bat %BuildMode%
 )
 
+if %Compiler% == ClangVS (
+    if not exist "../../VS_Solution_Clang" (
+        mkdir "../../VS_Solution_Clang"
+    )
+    
+    cd internal_build_tools
+    call generate_clang_vs_solution_internal.bat %BuildMode%
+)
+
 cd ..

@@ -83,14 +83,41 @@ namespace RC::LuaMadeSimple::Type
     {
       private:
         ObjectType* m_cpp_object;
+        
+        // Add a member to store the pusher callable
+        using PusherCallable = std::function<void(const LuaMadeSimple::Lua&, ObjectType*)>;
+        PusherCallable m_pusher_callable;
 
       protected:
         RemoteObject(const char* object_name, ObjectType* object) : BaseObject(object_name), m_cpp_object(object)
+        {
+            // Initialize with a default pusher that pushes the pointer as light userdata
+            // Using the correct Lua C API function
+            m_pusher_callable = [](const LuaMadeSimple::Lua& lua, ObjectType* obj) {
+                lua_pushlightuserdata(lua.get_lua_state(), obj);
+            };
+        }
+        
+        // Constructor with custom pusher
+        RemoteObject(const char* object_name, ObjectType* object, PusherCallable pusher) 
+            : BaseObject(object_name), m_cpp_object(object), m_pusher_callable(pusher)
         {
         }
 
       public:
         RemoteObject() = delete;
+        
+        // Add getter for the pusher callable
+        auto get_pusher_callable() const -> const PusherCallable&
+        {
+            return m_pusher_callable;
+        }
+        
+        // Add setter for the pusher callable
+        auto set_pusher_callable(PusherCallable pusher) -> void
+        {
+            m_pusher_callable = pusher;
+        }
 
         // For constructing a RemoteObject with a trivial templated type
         // This function cannot be used if you want to inherit from RemoteObject

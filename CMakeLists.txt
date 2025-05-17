@@ -7,7 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 enable_language(CXX ASM_MASM)
 include(CheckIPOSupported)
 include(GNUInstallDirs)
-
+set(CMAKE_CXX_COMPILER "C:\\Program Files\\LLVM\\bin\\clang-cl.exe")
+set(CMAKE_C_COMPILER "C:\\Program Files\\LLVM\\bin\\clang-cl.exe")
 # CMake Module Path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -24,6 +25,45 @@ endif()
 option(MAKE_DEPENDENCIES_SHARED "Make dependencies shared" OFF)
 option(UE4SS_CONSOLE_COLORS_ENABLED "Enable console colors" OFF)
 option(UE4SS_INPUT_ENABLED "Enable the input system" ON)
+option(UE4SS_USE_IWYU "Enable Include What You Use analysis" OFF)
+
+# Include What You Use (IWYU) support
+if(UE4SS_USE_IWYU)
+    # Try to find IWYU in common locations
+    find_program(IWYU_PATH 
+        NAMES 
+            include-what-you-use
+            include-what-you-use.exe
+            iwyu
+            iwyu.exe
+        PATHS
+            ${CMAKE_C_COMPILER_DIRECTORY}  # Same directory as clang
+            ${CMAKE_CXX_COMPILER_DIRECTORY}
+            ENV PATH
+        DOC "Path to include-what-you-use executable"
+    )
+    
+    if(IWYU_PATH)
+        message(STATUS "Found include-what-you-use: ${IWYU_PATH}")
+        
+        # Simple IWYU command - let it use default mappings
+        set(IWYU_COMMAND 
+            ${IWYU_PATH}
+            -Xiwyu --verbose=1
+            -Xiwyu --cxx17ns
+        )
+        
+        # Set the property globally for C++ files
+        set(CMAKE_CXX_INCLUDE_WHAT_YOU_USE "${IWYU_COMMAND}")
+        
+        message(STATUS "IWYU enabled for all C++ targets")
+        
+    else()
+        message(WARNING "include-what-you-use not found. Make sure it's installed with clang.")
+        message(STATUS "Searched in: ${CMAKE_C_COMPILER_DIRECTORY}, ${CMAKE_CXX_COMPILER_DIRECTORY}, and PATH")
+        set(UE4SS_USE_IWYU OFF)
+    endif()
+endif()
 
 # Projects
 set(PROJECTS "UE4SS" "UVTD")
@@ -253,4 +293,51 @@ else()
 
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY HELPSTRING "Choose build type")
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS ${BUILD_CONFIGS})
+endif()
+
+# Apply Clang compatibility fixes to problematic third-party targets
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(STATUS "Main CMakeLists: Detected Clang compiler (${CMAKE_CXX_COMPILER_ID})")
+    message(STATUS "Main CMakeLists: CMAKE_CXX_COMPILER = ${CMAKE_CXX_COMPILER}")
+    
+    set(CLANG_ENUM_FIXES 
+        -Wno-enum-enum-conversion
+        -Wno-enum-float-conversion
+        -Wno-deprecated-enum-enum-conversion
+        -Wno-deprecated-enum-float-conversion
+        -Wno-deprecated-anon-enum-enum-conversion
+        -Wno-error=enum-enum-conversion
+        -Wno-error=enum-float-conversion
+        -Wno-error=deprecated-enum-enum-conversion
+        -Wno-error=deprecated-enum-float-conversion
+        -Wno-error=deprecated-anon-enum-enum-conversion
+    )
+    
+    # Specific fixes for LuaRaw (C files compiled as C++)
+    set(LUARAW_SPECIFIC_FIXES
+        ${CLANG_ENUM_FIXES}
+        -Wno-error
+        -w  # Suppress all warnings for this problematic library
+    )
+    
+    # List of targets that need the fixes
+    set(PROBLEMATIC_TARGETS LuaRaw asmjit polyhook_2 PolyHook_2_0)
+    
+    foreach(target_name ${PROBLEMATIC_TARGETS})
+        if(TARGET ${target_name})
+            if(${target_name} STREQUAL "LuaRaw")
+                # Apply more aggressive fixes to LuaRaw
+                target_compile_options(${target_name} PRIVATE ${LUARAW_SPECIFIC_FIXES})
+                message(STATUS "Main CMakeLists: Applied aggressive Clang fixes to LuaRaw")
+            else()
+                # Apply standard fixes to other targets
+                target_compile_options(${target_name} PRIVATE ${CLANG_ENUM_FIXES})
+                message(STATUS "Main CMakeLists: Applied Clang enum compatibility fixes to: ${target_name}")
+            endif()
+        else()
+            message(STATUS "Main CMakeLists: Target ${target_name} not found, skipping Clang fixes")
+        endif()
+    endforeach()
+else()
+    message(STATUS "Main CMakeLists: Non-Clang compiler detected (${CMAKE_CXX_COMPILER_ID}), skipping Clang fixes")
 endif()

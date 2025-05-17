@@ -17,3 +17,15 @@ set(ASMTK_NO_CUSTOM_FLAGS ON CACHE BOOL "" FORCE)
 set(ASMJIT_NO_CUSTOM_FLAGS ON CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(zydis)
+
+# Apply compiler fixes after target creation
+if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+    # Apply fixes to zydis-related targets if they exist
+    if(TARGET Zydis)
+        target_compile_options(Zydis PRIVATE -w)
+    endif()
+    if(TARGET Zycore)
+        target_compile_options(Zycore PRIVATE -w)
+    endif()
+endif ()
+

@@ -1443,18 +1443,18 @@ static void swapexps (expdesc *e1, expdesc *e2) {
 */
 static void codearith (FuncState *fs, BinOpr opr,
                        expdesc *e1, expdesc *e2, int flip, int line) {
-  TMS event = cast(TMS, opr + TM_ADD);
-  if (tonumeral(e2, NULL) && luaK_exp2K(fs, e2)) {  /* K operand? */
-    int v2 = e2->u.info;  /* K index */
-    OpCode op = cast(OpCode, opr + OP_ADDK);
-    finishbinexpval(fs, e1, e2, op, v2, flip, line, OP_MMBINK, event);
-  }
-  else {  /* 'e2' is neither an immediate nor a K operand */
-    OpCode op = cast(OpCode, opr + OP_ADD);
-    if (flip)
-      swapexps(e1, e2);  /* back to original order */
-    codebinexpval(fs, op, e1, e2, line);  /* use standard operators */
-  }
+    TMS event = cast(TMS, cast(int, opr) + cast(int, TM_ADD));
+    if (tonumeral(e2, NULL) && luaK_exp2K(fs, e2)) {  /* K operand? */
+        int v2 = e2->u.info;  /* K index */
+        OpCode op = cast(OpCode, cast(int, opr) + cast(int, OP_ADDK));
+        finishbinexpval(fs, e1, e2, op, v2, flip, line, OP_MMBINK, event);
+    }
+    else {  /* 'e2' is neither an immediate nor a K operand */
+        OpCode op = cast(OpCode, cast(int, opr) + cast(int, OP_ADD));
+        if (flip)
+            swapexps(e1, e2);  /* back to original order */
+        codebinexpval(fs, op, e1, e2, line);  /* use standard operators */
+    }
 }
 
 
@@ -1483,23 +1483,23 @@ static void codecommutative (FuncState *fs, BinOpr op,
 */
 static void codebitwise (FuncState *fs, BinOpr opr,
                          expdesc *e1, expdesc *e2, int line) {
-  int flip = 0;
-  int v2;
-  OpCode op;
-  if (e1->k == VKINT && luaK_exp2RK(fs, e1)) {
-    swapexps(e1, e2);  /* 'e2' will be the constant operand */
-    flip = 1;
-  }
-  else if (!(e2->k == VKINT && luaK_exp2RK(fs, e2))) {  /* no constants? */
-    op = cast(OpCode, opr + OP_ADD);
-    codebinexpval(fs, op, e1, e2, line);  /* all-register opcodes */
-    return;
-  }
-  v2 = e2->u.info;  /* index in K array */
-  op = cast(OpCode, opr + OP_ADDK);
-  lua_assert(ttisinteger(&fs->f->k[v2]));
-  finishbinexpval(fs, e1, e2, op, v2, flip, line, OP_MMBINK,
-                  cast(TMS, opr + TM_ADD));
+    int flip = 0;
+    int v2;
+    OpCode op;
+    if (e1->k == VKINT && luaK_exp2RK(fs, e1)) {
+        swapexps(e1, e2);  /* 'e2' will be the constant operand */
+        flip = 1;
+    }
+    else if (!(e2->k == VKINT && luaK_exp2RK(fs, e2))) {  /* no constants? */
+        op = cast(OpCode, cast(int, opr) + cast(int, OP_ADD));
+        codebinexpval(fs, op, e1, e2, line);  /* all-register opcodes */
+        return;
+    }
+    v2 = e2->u.info;  /* index in K array */
+    op = cast(OpCode, cast(int, opr) + cast(int, OP_ADDK));
+    lua_assert(ttisinteger(&fs->f->k[v2]));
+    finishbinexpval(fs, e1, e2, op, v2, flip, line, OP_MMBINK,
+                    cast(TMS, cast(int, opr) + cast(int, TM_ADD)));
 }
 
 
@@ -1568,20 +1568,21 @@ static void codeeq (FuncState *fs, BinOpr opr, expdesc *e1, expdesc *e2) {
 /*
 ** Apply prefix operation 'op' to expression 'e'.
 */
-void luaK_prefix (FuncState *fs, UnOpr op, expdesc *e, int line) {
-  static const expdesc ef = {VKINT, {0}, NO_JUMP, NO_JUMP};
-  luaK_dischargevars(fs, e);
-  switch (op) {
+void luaK_prefix (FuncState *fs, UnOpr op, expdesc *e, int line)
+{
+    static const expdesc ef = {VKINT, {0}, NO_JUMP, NO_JUMP};
+    luaK_dischargevars(fs, e);
+    switch (op) {
     case OPR_MINUS: case OPR_BNOT:  /* use 'ef' as fake 2nd operand */
-      if (constfolding(fs, op + LUA_OPUNM, e, &ef))
-        break;
-      /* else */ /* FALLTHROUGH */
+      if (constfolding(fs, cast(int, op) + cast(int, LUA_OPUNM), e, &ef))
+          break;
+        /* else */ /* FALLTHROUGH */
     case OPR_LEN:
-      codeunexpval(fs, cast(OpCode, op + OP_UNM), e, line);
-      break;
+        codeunexpval(fs, cast(OpCode, cast(int, op) + cast(int, OP_UNM)), e, line);
+        break;
     case OPR_NOT: codenot(fs, e); break;
     default: lua_assert(0);
-  }
+    }
 }
 
 

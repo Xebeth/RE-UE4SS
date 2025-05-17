@@ -68,8 +68,21 @@ target_compile_definitions(${TARGET} PRIVATE
         $<$<NOT:$<BOOL:${UE4SS_${TARGET}_BUILD_SHARED}>>:
             RC_${MODULE_NAME}_BUILD_STATIC>)
 
+# Debug: Print compiler information
+message(STATUS "LuaRaw: CMAKE_CXX_COMPILER_ID = ${CMAKE_CXX_COMPILER_ID}")
+message(STATUS "LuaRaw: CMAKE_CXX_COMPILER = ${CMAKE_CXX_COMPILER}")
+message(STATUS "LuaRaw: CMAKE_C_COMPILER_ID = ${CMAKE_C_COMPILER_ID}")
+
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
+    message(STATUS "LuaRaw: Applying MSVC compiler options")
     target_compile_options(${TARGET} PRIVATE /W0)
-elseif (${CMAKE_CXX_COMPILER_ID} STREQUAL Clang)
-    target_compile_options(${TARGET} PRIVATE -xc++;-Wno-deprecated-enum-enum-conversion)
+elseif (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+    message(STATUS "LuaRaw: Applying comprehensive Clang compiler options")
+    target_compile_options(${TARGET} PRIVATE 
+        -xc++
+        -w  # Nuclear option: suppress ALL warnings
+    )
+    
+else()
+    message(STATUS "LuaRaw: Unknown compiler ID: ${CMAKE_CXX_COMPILER_ID}")
 endif ()
