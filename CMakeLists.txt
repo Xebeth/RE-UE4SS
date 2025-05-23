@@ -151,3 +151,4 @@ apply_compiler_settings_to_targets("${TARGET_COMPILE_OPTIONS}" "${TARGET_LINK_OP
 
 # Set default configuration
 # Uses setup_build_config() from cmake/modules/Utilities.cmake
+setup_build_config()
