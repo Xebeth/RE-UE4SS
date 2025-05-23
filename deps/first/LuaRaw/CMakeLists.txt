@@ -78,7 +78,16 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # Suppress all warnings for Clang (includes AppleClang and ClangCL)
     # -xc++ forces C files to be treated as C++
-    # -w suppresses ALL warnings since this is C code compiled as C++
-    target_compile_options(${TARGET} PRIVATE -xc++ -w)
-    message(STATUS "LuaRaw: Suppressing all warnings for Clang compiler")
+    # First downgrade enum conversion errors to warnings, then suppress all warnings
+    target_compile_options(${TARGET} PRIVATE 
+        -xc++ 
+        -Wno-error=enum-enum-conversion
+        -Wno-error=deprecated-enum-enum-conversion
+        -Wno-error=deprecated-anon-enum-enum-conversion
+        -Wno-enum-enum-conversion
+        -Wno-deprecated-enum-enum-conversion
+        -Wno-deprecated-anon-enum-enum-conversion
+        -w  # Finally, suppress all warnings
+    )
+    message(STATUS "LuaRaw: Suppressing all warnings and enum errors for Clang compiler")
 endif ()
