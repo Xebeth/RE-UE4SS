@@ -72,8 +72,13 @@ target_compile_definitions(${TARGET} PRIVATE
 # Uses make_headers_visible() from cmake/modules/IDEVisibility.cmake
 make_headers_visible(${TARGET} "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
-if (${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
+if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+    # Suppress all warnings for MSVC
     target_compile_options(${TARGET} PRIVATE /W0)
-elseif (${CMAKE_CXX_COMPILER_ID} STREQUAL Clang)
-    target_compile_options(${TARGET} PRIVATE -xc++;-Wno-deprecated-enum-enum-conversion)
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # Suppress all warnings for Clang (includes AppleClang and ClangCL)
+    # -xc++ forces C files to be treated as C++
+    # -w suppresses ALL warnings since this is C code compiled as C++
+    target_compile_options(${TARGET} PRIVATE -xc++ -w)
+    message(STATUS "LuaRaw: Suppressing all warnings for Clang compiler")
 endif ()

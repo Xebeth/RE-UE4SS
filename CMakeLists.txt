@@ -121,6 +121,13 @@ list(APPEND Test_FLAGS ${RELWITHDEBINFO_FLAGS_LIST})
 # Uses generate_build_configurations() from cmake/modules/Utilities.cmake
 generate_build_configurations()
 
+# Warning Suppression Strategy:
+# Individual targets may require specific warning suppressions due to various reasons
+# (e.g., third-party code, C/C++ compatibility, legacy code). Rather than applying
+# global warning suppressions, we handle these on a per-target basis in their
+# respective CMakeLists.txt files using target_compile_options().
+# This keeps the warning configuration localized and explicit.
+
 # Add subdirectories for dependencies and projects
 add_subdirectory("deps")
 add_subdirectory("cppmods")
