@@ -77,17 +77,23 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     target_compile_options(${TARGET} PRIVATE /W0)
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # Suppress all warnings for Clang (includes AppleClang and ClangCL)
-    # -xc++ forces C files to be treated as C++
-    # First downgrade enum conversion errors to warnings, then suppress all warnings
-    target_compile_options(${TARGET} PRIVATE 
-        -xc++ 
-        -Wno-error=enum-enum-conversion
-        -Wno-error=deprecated-enum-enum-conversion
-        -Wno-error=deprecated-anon-enum-enum-conversion
-        -Wno-enum-enum-conversion
-        -Wno-deprecated-enum-enum-conversion
-        -Wno-deprecated-anon-enum-enum-conversion
-        -w  # Finally, suppress all warnings
-    )
-    message(STATUS "LuaRaw: Suppressing all warnings and enum errors for Clang compiler")
+    message(STATUS "LuaRaw: Detected Clang variant: ${CMAKE_CXX_COMPILER_ID}")
+    message(STATUS "LuaRaw: Compiler path: ${CMAKE_CXX_COMPILER}")
+    
+    # Check if we're using ClangCL (MSVC-compatible mode)
+    if (CMAKE_CXX_COMPILER MATCHES "clang-cl" OR MSVC)
+        # ClangCL mode - use MSVC-style flags
+        target_compile_options(${TARGET} PRIVATE 
+            /W0  # Disable all warnings
+            -Wno-everything  # Also use Clang's catch-all
+        )
+        message(STATUS "LuaRaw: Using ClangCL mode suppression")
+    else()
+        # Regular Clang mode
+        target_compile_options(${TARGET} PRIVATE 
+            -xc++ 
+            -Wno-everything  # Nuclear option: disable EVERYTHING
+        )
+        message(STATUS "LuaRaw: Using regular Clang mode suppression")
+    endif()
 endif ()
