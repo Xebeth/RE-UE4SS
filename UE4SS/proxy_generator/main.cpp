@@ -210,6 +210,20 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << "#define WIN32_LEAN_AND_MEAN" << endl;
     cpp_file << "#include <Windows.h>" << endl;
     cpp_file << "#include <filesystem>" << endl;
+
+#ifdef WITH_ANTI_THREAD_HIDE_FROM_DEBUGGER
+    cpp_file << "#include <cassert>" << endl;
+    cpp_file << endl;
+    cpp_file << "#ifndef _NTDEF_" << endl;
+    cpp_file << "    typedef _Return_type_success_(return >= 0) LONG NTSTATUS;" << endl;
+    cpp_file << "    typedef NTSTATUS *PNTSTATUS;" << endl;
+    cpp_file << "#endif" << endl;
+    cpp_file << endl;
+    cpp_file << "typedef NTSTATUS (NTAPI* fnNtSetInformationThread)(HANDLE,UINT,LPVOID,ULONG);" << endl;
+    cpp_file << "enum { ThreadHideFromDebugger = 0x11 };" << endl;
+    cpp_file << endl;
+    cpp_file << "fnNtSetInformationThread g_nt_set_information_thread_trampoline = nullptr;" << endl;
+#endif
     cpp_file << endl;
     cpp_file << "#pragma comment(lib, \"user32.lib\")" << endl;
     cpp_file << endl;
@@ -256,6 +270,66 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << "}" << endl;
     cpp_file << endl;
 
+#ifdef WITH_ANTI_THREAD_HIDE_FROM_DEBUGGER
+    cpp_file << "NTSTATUS NTAPI hooked_nt_set_information_thread(HANDLE hThread, UINT cls, LPVOID info, ULONG len)" << endl;
+    cpp_file << "{" << endl;
+    cpp_file << "	// Setting ThreadHideFromDebugger is irreversible so we must hook to make sure it is never set" << endl;
+    cpp_file << "	// Will cause exceptions to not be caught by the debugger, and for breakpoints to crash if set" << endl;
+    cpp_file << "	if (cls == ThreadHideFromDebugger)" << endl;
+    cpp_file << "	// make sure the handle is valid" << endl;
+    cpp_file << "	// anti debug may send invalid handles to make sure it's not patched to always return success" << endl;
+    cpp_file << "	if (WaitForSingleObject(hThread, 0) != WAIT_FAILED)" << endl;
+    cpp_file << "	{" << endl;
+    cpp_file << "		return 0; // NTSTATUS_SUCCESS" << endl;
+    cpp_file << "	}" << endl;
+    cpp_file << endl;
+    cpp_file << "	return g_nt_set_information_thread_trampoline(hThread, cls, info, len);" << endl;
+    cpp_file << "}" << endl;
+    cpp_file << endl;
+    cpp_file << "// At least 12 bytes required for this jump" << endl;
+    cpp_file << "void* detour_nt_set_information_thread(void* source, void* destination, DWORD64 length) {" << endl;
+    cpp_file << "    //mov rax,0xABABABABABABABAB" << endl;
+    cpp_file << "    //jmp rax" << endl;
+    cpp_file << endl;
+    cpp_file << "    DWORD dwOld;" << endl;
+    cpp_file << "    assert(length >= 0xC);" << endl;
+    cpp_file << "    void* tramp = malloc(length + 12);" << endl;
+    cpp_file << "    BYTE payload[] = { 0x48, 0xB8, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xFF, 0xE0 };" << endl;
+    cpp_file << endl;
+    cpp_file << "    VirtualProtect(tramp, length + 12, PAGE_EXECUTE_READWRITE, &dwOld);" << endl;
+    cpp_file << "    VirtualProtect(source, length, PAGE_EXECUTE_READWRITE, &dwOld);" << endl;
+    cpp_file << endl;
+    cpp_file << "    memcpy(tramp, source, length);" << endl;
+    cpp_file << endl;
+    cpp_file << "    const auto tramp_jmp = static_cast<BYTE*>(tramp) + length;" << endl;
+    cpp_file << "    *reinterpret_cast<void**>(payload + 2) = static_cast<void*>(static_cast<BYTE*>(source) + length);" << endl;
+    cpp_file << "    memcpy(tramp_jmp, payload, 12);" << endl;
+    cpp_file << endl;
+    cpp_file << "    *reinterpret_cast<void**>(payload + 2) = destination;" << endl;
+    cpp_file << "    memcpy(source, payload, 12);" << endl;
+    cpp_file << "    memset(static_cast<BYTE*>(source) + 12, 0x90, length - 12);" << endl;
+    cpp_file << endl;
+    cpp_file << "    VirtualProtect(source, length, dwOld, &dwOld);" << endl;
+    cpp_file << endl;
+    cpp_file << "    return tramp;" << endl;
+    cpp_file << "}" << endl;
+    cpp_file << endl;
+    cpp_file << "void hook_nt_set_information_thread()" << endl;
+    cpp_file << "{" << endl;
+    cpp_file << "	if (g_nt_set_information_thread_trampoline == nullptr)" << endl;
+    cpp_file << "	{" << endl;
+    cpp_file << "		auto pfnNtSetInformationThread = reinterpret_cast<fnNtSetInformationThread>(GetProcAddress(GetModuleHandleA(\"ntdll.dll\"), \"ZwSetInformationThread\"));" << endl;
+    cpp_file << endl;
+    cpp_file << "		if (pfnNtSetInformationThread != nullptr)" << endl;
+    cpp_file << "		{" << endl;
+    cpp_file << "			g_nt_set_information_thread_trampoline = static_cast<fnNtSetInformationThread>(" << endl;
+    cpp_file << "			    detour_nt_set_information_thread(reinterpret_cast<LPVOID>(pfnNtSetInformationThread)," << endl;
+    cpp_file << "			                                     reinterpret_cast<LPVOID>(hooked_nt_set_information_thread), 0x20)" << endl;
+    cpp_file << "            );" << endl;
+    cpp_file << "		}" << endl;
+    cpp_file << "	}" << endl;
+    cpp_file << "}" << endl;
+#endif
     cpp_file << "HMODULE load_ue4ss_dll(HMODULE moduleHandle)" << endl;
     cpp_file << "{" << endl;
     cpp_file << "    HMODULE hModule = nullptr;" << endl;
@@ -307,6 +381,9 @@ int _tmain(int argc, TCHAR* argv[])
     cpp_file << "{" << endl;
     cpp_file << "    if (fdwReason == DLL_PROCESS_ATTACH)" << endl;
     cpp_file << "    {" << endl;
+#ifdef WITH_ANTI_THREAD_HIDE_FROM_DEBUGGER
+    cpp_file << "        hook_nt_set_information_thread();" << endl;
+#endif
     cpp_file << "        load_original_dll();" << endl;
     cpp_file << "        HMODULE hUE4SSDll = load_ue4ss_dll(hInstDll);" << endl;
     cpp_file << "        if (hUE4SSDll)" << endl;

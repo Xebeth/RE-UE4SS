@@ -1,4 +1,12 @@
 local projectName = "proxy_generator"
+	
+option("antiThreadHideFromDebugger")
+    set_default(false)
+    set_showmenu(true)
+	
+	add_defines("WITH_ANTI_THREAD_HIDE_FROM_DEBUGGER")
+
+    set_description("Hook NtSetInformationThread to allow debugging of C++ mods (e.g because of Steam).")
 
 rule("dllexports")
     set_extensions(".exports")
@@ -14,6 +22,10 @@ target(projectName)
     add_links("imagehlp")
 
     add_files("exports/*.exports", { rule = "dllexports" })
+	
+	if get_config("antiThreadHideFromDebugger") then
+		add_defines("WITH_ANTI_THREAD_HIDE_FROM_DEBUGGER")
+	end
 
     after_build(function(target)
         local proxy_exe =  target:targetfile()
