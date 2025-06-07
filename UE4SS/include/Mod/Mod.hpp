@@ -27,6 +27,7 @@ namespace RC
       protected:
         StringType m_mod_name;
         std::filesystem::path m_mod_path;
+        StringType m_last_error;
 
       protected:
         // Whether the mod can be installed
@@ -57,6 +58,8 @@ namespace RC
         auto set_installed(bool) -> void;
         auto is_installed() const -> bool;
         auto is_started() const -> bool;
+
+        auto get_last_error() const -> StringType { return m_last_error; }
 
       public:
         auto get_program() -> UE4SSProgram& { return m_program; }

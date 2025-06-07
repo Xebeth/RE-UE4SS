@@ -653,7 +653,8 @@ namespace RC
 
         if (!std::filesystem::exists(m_scripts_path))
         {
-            Output::send<LogLevel::Error>(STR("Mod path doesn't exist {}\n"), ensure_str(m_scripts_path));
+            m_last_error = std::format(STR("Mod path doesn't exist {}\n"), ensure_str(m_scripts_path));
+            Output::send<LogLevel::Warning>(m_last_error);
             set_installable(false);
             return;
         }
@@ -811,11 +812,11 @@ namespace RC
     auto LuaMod::setup_custom_module_loader(const LuaMadeSimple::Lua* lua_state) -> void
     {
         lua_State* L = lua_state->get_lua_state();
-    
+
         // Initialize ue4ss_loaded_modules table
         lua_newtable(L);
         lua_setglobal(L, "ue4ss_loaded_modules");
-    
+
         // Get package.searchers table
         lua_getglobal(L, "package");
         if (!lua_istable(L, -1))
@@ -824,7 +825,7 @@ namespace RC
             lua_pop(L, 1);
             return;
         }
-    
+
         lua_getfield(L, -1, "searchers");
         if (!lua_istable(L, -1))
         {
@@ -832,7 +833,7 @@ namespace RC
             lua_pop(L, 2);
             return;
         }
-    
+
         // Insert our searcher at position 1
         // First, shift existing searchers up
         lua_Integer len = luaL_len(L, -1);
@@ -841,16 +842,16 @@ namespace RC
             lua_geti(L, -1, i);     // Get searchers[i]
             lua_seti(L, -2, i + 1); // Set searchers[i+1] = searchers[i]
         }
-    
+
         // Push the LuaMod instance as a light userdata (our upvalue)
         lua_pushlightuserdata(L, this);
-    
+
         // Create the C closure with one upvalue
         lua_pushcclosure(L, custom_module_searcher, 1);
-    
+
         // Set searchers[1] = our new closure
         lua_seti(L, -2, 1);
-    
+
         lua_pop(L, 2); // Clean up stack: searchers, package
     }
 
@@ -863,7 +864,7 @@ namespace RC
             lua_pushstring(L, "module name is required");
             return 1;
         }
-        
+
         // Get the LuaMod* from the upvalue at index 1
         auto* lua_mod = static_cast<LuaMod*>(lua_touserdata(L, lua_upvalueindex(1)));
         if (!lua_mod)
@@ -871,23 +872,23 @@ namespace RC
             lua_pushstring(L, "custom searcher is missing its C++ context");
             return 1;
         }
-        
+
         // Get paths directly from the C++ object and convert to UTF-8 strings for Lua
         const auto& mods_dir = lua_mod->get_program().get_mods_directory();
         const auto& mod_name = lua_mod->get_name();
         const auto& scripts_path = lua_mod->get_scripts_path();
-        
+
         std::string mods_path_str = normalize_path_for_lua(mods_dir);
         std::string mod_name_str = to_utf8_string(mod_name);
         std::string scripts_path_str = normalize_path_for_lua(scripts_path);
-        
+
         // Try different path combinations
         std::vector<std::string> paths_to_try = {
             scripts_path_str + "/" + module_name + ".lua",
             mods_path_str + "/shared/" + module_name + ".lua",
             mods_path_str + "/shared/" + module_name + "/" + module_name + ".lua"
         };
-        
+
         // Try each path
         std::string attempted_paths_str;
         for (const auto& path : paths_to_try)
@@ -903,27 +904,27 @@ namespace RC
                 attempted_paths_str += "\n\t" + path + " (encoding error)";
                 continue;
             }
-            
+
             if (!std::filesystem::exists(wide_path))
             {
                 attempted_paths_str += "\n\t" + path;
                 continue;
             }
-            
+
             // Check if already loaded
             lua_getglobal(L, "ue4ss_loaded_modules");
             lua_pushstring(L, path.c_str());
             lua_gettable(L, -2);
-            
+
             if (!lua_isnil(L, -1))
             {
                 // Already loaded, return the cached function
                 lua_remove(L, -2); // Remove ue4ss_loaded_modules table
                 return 1;
             }
-            
+
             lua_pop(L, 2); // Pop nil and ue4ss_loaded_modules
-            
+
             // Try to load the file
             std::ifstream file(wide_path, std::ios::binary);
             if (!file.is_open())
@@ -931,12 +932,12 @@ namespace RC
                 attempted_paths_str += "\n\t" + path + " (cannot open)";
                 continue;
             }
-            
+
             // Get file size and read content
             file.seekg(0, std::ios::end);
             std::streamsize size = file.tellg();
             file.seekg(0, std::ios::beg);
-            
+
             std::vector<char> buffer(size);
             if (!file.read(buffer.data(), size))
             {
@@ -944,20 +945,20 @@ namespace RC
                 continue;
             }
             file.close();
-            
+
             // Create chunk name for debugging
             std::string chunk_name = "@" + path;
-            
+
             // Load the script as a function that returns the module
             std::string module_wrapper = "return function()\n" + std::string(buffer.data(), buffer.size()) + "\nend";
-            
+
             if (luaL_loadbuffer(L, module_wrapper.c_str(), module_wrapper.size(), chunk_name.c_str()) != LUA_OK)
             {
                 attempted_paths_str += "\n\t" + path + " (syntax error: " + lua_tostring(L, -1) + ")";
                 lua_pop(L, 1); // Pop error message
                 continue;
             }
-            
+
             // Execute to get the loader function
             if (lua_pcall(L, 0, 1, 0) != LUA_OK)
             {
@@ -965,18 +966,18 @@ namespace RC
                 lua_pop(L, 1); // Pop error message
                 continue;
             }
-            
+
             // Cache the loaded module
             lua_getglobal(L, "ue4ss_loaded_modules");
             lua_pushstring(L, path.c_str());
             lua_pushvalue(L, -3); // Copy the function
             lua_settable(L, -3);
             lua_pop(L, 1); // Pop ue4ss_loaded_modules
-            
+
             // Return the loader function
             return 1;
         }
-        
+
         // Module not found
         std::string error_msg = "module '" + std::string(module_name) + "' not found:" + attempted_paths_str;
         lua_pushstring(L, error_msg.c_str());
@@ -4042,7 +4043,8 @@ Overloads:
         }
         catch (const std::exception& e)
         {
-            Output::send<LogLevel::Error>(STR("Exception during mod startup: {}\n"), ensure_str(e.what()));
+            m_last_error = std::format(STR("Exception during mod startup: {}\n"), ensure_str(e.what()));
+            Output::send<LogLevel::Error>(m_last_error);
         }
     }
 
