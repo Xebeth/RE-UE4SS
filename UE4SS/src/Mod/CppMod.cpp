@@ -16,7 +16,8 @@ namespace RC
 
         if (!std::filesystem::exists(m_dlls_path))
         {
-            Output::send<LogLevel::Warning>(STR("Could not find the dlls folder for mod {}\n"), m_mod_name);
+            m_last_error = std::format(STR("Could not find the dlls folder for mod {}: {}\n"), m_mod_name, to_wstring(m_dlls_path.string()));
+            Output::send<LogLevel::Warning>(m_last_error);
             set_installable(false);
             return;
         }
@@ -28,8 +29,9 @@ namespace RC
 
         if (!m_main_dll_module)
         {
-            Output::send<LogLevel::Warning>(STR("Failed to load dll <{}> for mod {}, error: {}\n"),
-                                            ensure_str(dll_path), m_mod_name, SysError(GetLastError()).c_str());
+            m_last_error = std::format(STR("Failed to load dll <{}> for mod {}, error: {}\n"),
+                                       ensure_str(dll_path), m_mod_name, SysError(GetLastError()).c_str());
+            Output::send<LogLevel::Warning>(m_last_error);
             set_installable(false);
             return;
         }
@@ -39,8 +41,8 @@ namespace RC
 
         if (!m_start_mod_func || !m_uninstall_mod_func)
         {
-            Output::send<LogLevel::Warning>(STR("Failed to find exported mod lifecycle functions for mod {}\n"), m_mod_name);
-
+            m_last_error = std::format(STR("Failed to find exported mod lifecycle functions for mod {}\n"), m_mod_name);
+            Output::send<LogLevel::Warning>(m_last_error);
             FreeLibrary(m_main_dll_module);
             m_main_dll_module = NULL;
 
@@ -60,14 +62,17 @@ namespace RC
         {
             if (!Output::has_internal_error())
             {
-                Output::send<LogLevel::Warning>(STR("Failed to load dll <{}> for mod {}, because: {}\n"),
-                                                ensure_str((m_dlls_path / STR("main.dll"))),
-                                                m_mod_name,
-                                                ensure_str(e.what()));
+                m_last_error = std::format(STR("Failed to load dll <{}> for mod {}, because: {}\n"),
+                                           ensure_str(m_dlls_path / STR("main.dll")),
+                                           m_mod_name, ensure_str(e.what()));
+                Output::send<LogLevel::Warning>(m_last_error);
             }
             else
             {
-                printf_s("Internal Error: %s\n", e.what());
+                auto error = std::format("Internal Error: {}\n", e.what());
+
+                m_last_error = to_wstring(error);
+                printf_s(error.c_str());
             }
         }
     }
