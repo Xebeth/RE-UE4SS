@@ -29,25 +29,14 @@ namespace RC
 
         if (!m_main_dll_module)
         {
-            m_last_error = std::format(STR("Failed to load dll <{}> for mod {}, error: {}\n"),
-                                       ensure_str(dll_path), m_mod_name, SysError(GetLastError()).c_str());
+            m_last_error = std::format(STR("Failed to load dll <{}> for mod {}, error code: 0x{:x}\n"), ensure_str(dll_path), m_mod_name, GetLastError());
             Output::send<LogLevel::Warning>(m_last_error);
             set_installable(false);
             return;
         }
-
-        m_start_mod_func = reinterpret_cast<start_type>(GetProcAddress(m_main_dll_module, "start_mod"));
-        m_uninstall_mod_func = reinterpret_cast<uninstall_type>(GetProcAddress(m_main_dll_module, "uninstall_mod"));
-
-        if (!m_start_mod_func || !m_uninstall_mod_func)
+        else
         {
-            m_last_error = std::format(STR("Failed to find exported mod lifecycle functions for mod {}\n"), m_mod_name);
-            Output::send<LogLevel::Warning>(m_last_error);
-            FreeLibrary(m_main_dll_module);
-            m_main_dll_module = NULL;
-
-            set_installable(false);
-            return;
+            load_dll();
         }
     }
 
@@ -80,9 +69,15 @@ namespace RC
     auto CppMod::uninstall() -> void
     {
         Output::send(STR("Stopping C++ mod '{}' for uninstall\n"), m_mod_name);
+
         if (m_mod && m_uninstall_mod_func)
         {
+            // flag as stopped before actually deleting
+            // the instance to prevent calls to on_update
+            m_is_started = false;
             m_uninstall_mod_func(m_mod);
+            m_last_error.clear();
+            m_mod = nullptr;
         }
     }
 
@@ -169,12 +164,79 @@ namespace RC
         }
     }
 
-    CppMod::~CppMod()
+    auto CppMod::unload_dll() -> void
     {
-        if (m_main_dll_module)
+        if (is_started())
+            uninstall();
+
+        if (m_main_dll_module != nullptr)
         {
             FreeLibrary(m_main_dll_module);
             RemoveDllDirectory(m_dlls_path_cookie);
+            m_uninstall_mod_func = nullptr;
+            m_main_dll_module = nullptr;
+            m_start_mod_func = nullptr;
         }
+    }
+
+    auto CppMod::load_dll() -> bool
+    {
+        if (is_loaded())
+            return true;
+
+        auto dll_path = get_dll_path();
+        // Add mods dlls directory to search path for dynamic/shared linked libraries in mods
+        m_dlls_path_cookie = AddDllDirectory(m_dlls_path.c_str());
+        m_main_dll_module = LoadLibraryExW(dll_path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+
+        if (!m_main_dll_module)
+        {
+            m_last_error = std::format(STR("Failed to load dll <{}> for mod {}, error {}\n"),
+                                       ensure_str(dll_path), m_mod_name, SysError(GetLastError()).c_str());
+            Output::send<LogLevel::Warning>(m_last_error);
+            set_installable(false);
+
+            return false;
+        }
+
+        m_uninstall_mod_func = reinterpret_cast<uninstall_type>(GetProcAddress(m_main_dll_module, "uninstall_mod"));
+        m_start_mod_func = reinterpret_cast<start_type>(GetProcAddress(m_main_dll_module, "start_mod"));
+
+        if (!m_start_mod_func || !m_uninstall_mod_func)
+        {
+            m_last_error = std::format(STR("Failed to find exported mod lifecycle functions for mod {}\n"), m_mod_name);
+            Output::send<LogLevel::Warning>(m_last_error);
+            set_installable(false);
+            unload_dll();
+
+            return false;
+        }
+
+        return true;
+    }
+
+    auto CppMod::get_dll_path() const -> std::filesystem::path
+    {
+        return m_dlls_path / STR("main.dll");
+    }
+
+    auto CppMod::mod_info() const -> ModMetadata
+    {
+        return m_mod != nullptr ? ModMetadata {
+            .ModName = m_mod->ModName,
+            .ModVersion = m_mod->ModVersion,
+            .ModDescription = m_mod->ModDescription,
+            .ModAuthors = m_mod->ModAuthors,
+        } : ModMetadata {};
+    }
+
+    auto CppMod::is_loaded() const -> bool
+    {
+        return m_main_dll_module != nullptr;
+    }
+
+    CppMod::~CppMod()
+    {
+        unload_dll();
     }
 } // namespace RC

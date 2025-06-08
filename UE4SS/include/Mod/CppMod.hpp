@@ -42,6 +42,12 @@ namespace RC
         auto start_mod() -> void override;
         auto uninstall() -> void override;
 
+        auto unload_dll() -> void;
+        auto load_dll() -> bool;
+        auto is_loaded() const -> bool;
+        auto mod_info() const -> ModMetadata;
+        auto get_dll_path() const -> std::filesystem::path;
+
         auto fire_on_lua_start(StringViewType mod_name,
                                LuaMadeSimple::Lua& lua,
                                LuaMadeSimple::Lua& main_lua,
